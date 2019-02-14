@@ -93,25 +93,22 @@ class Encoder:
         self.cache[token] = word
         return word
 
-    def encode_text(self, text):
+    def encode(self, text):
         bpe_tokens = []
         for token in re.findall(self.pat, text):
             token = ''.join(self.byte_encoder[b] for b in token.encode('utf-8'))
             bpe_tokens.extend(self.encoder[bpe_token] for bpe_token in self.bpe(token).split(' '))
         return bpe_tokens
 
-    def encode(self, texts):
-        return [self.encode_text(text) for text in texts]
-
     def decode(self, tokens):
         text = ''.join([self.decoder[token] for token in tokens])
         text = bytearray([self.byte_decoder[c] for c in text]).decode('utf-8', errors=self.errors)
         return text
 
-def get_encoder(model_name):
-    with open(os.path.join('models', model_name, 'encoder.json'), 'r') as f:
+def get_encoder(model_name, models_dir):
+    with open(os.path.join(models_dir, model_name, 'encoder.json'), 'r') as f:
         encoder = json.load(f)
-    with open(os.path.join('models', model_name, 'vocab.bpe'), 'r') as f:
+    with open(os.path.join(models_dir, model_name, 'vocab.bpe'), 'r', encoding="utf-8") as f:
         bpe_data = f.read()
     bpe_merges = [tuple(merge_str.split()) for merge_str in bpe_data.split('\n')[1:-1]]
     return Encoder(
