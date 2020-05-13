@@ -1,57 +1,101 @@
 **Status:** Archive (code is provided as-is, no updates expected)
 
-# gpt-2
+# image-gpt
 
-Code and models from the paper ["Language Models are Unsupervised Multitask Learners"](https://d4mucfpksywv.cloudfront.net/better-language-models/language-models.pdf).
+Code and models from the paper ["Generative Pretraining from Pixels"] (TODO: link to pdf).
 
-You can read about GPT-2 and its staged release in our [original blog post](https://blog.openai.com/better-language-models/), [6 month follow-up post](https://openai.com/blog/gpt-2-6-month-follow-up/), and [final post](https://www.openai.com/blog/gpt-2-1-5b-release/).
+Supported Platforms:
 
-We have also [released a dataset](https://github.com/openai/gpt-2-output-dataset) for researchers to study their behaviors.
+- Ubuntu 16.04
 
-<sup>*</sup> *Note that our original parameter counts were wrong due to an error (in our previous blog posts and paper).  Thus you may have seen small referred to as 117M and medium referred to as 345M.*
+## Install
+
+You can get miniconda from https://docs.conda.io/en/latest/miniconda.html, or install the dependencies shown below manually.
+
+```
+conda create --name image-gpt python=3.7.3
+conda activate image-gpt
+
+conda install numpy=1.16.3
+conda install tensorflow-gpu=1.13.1
+
+conda install imageio=2.8.0
+conda install requests=2.21.0
+conda install tqdm=4.46.0
+```
 
 ## Usage
 
-This repository is meant to be a starting point for researchers and engineers to experiment with GPT-2.
+This repository is meant to be a starting point for researchers and engineers to experiment with image GPT (iGPT). Our code forks GPT-2 to highlight that it can be easily applied across domains. The diff from `gpt-2/src/model.py` to `image-gpt/src/model.py` includes a new activation function, renaming of several variables, and the introduction of a start-of-sequence token, none of which change the model architecture.
 
-For basic information, see our [model card](./model_card.md).
+### Downloading Pre-trained Models
 
-### Some caveats
+To download a model checkpoint, run `download.py`. The `--model` argument should be one of "s", "m", or "l", and the `--ckpt` argument should be one of "131000", "262000", "524000", or "1000000".
 
-- GPT-2 models' robustness and worst case behaviors are not well-understood.  As with any machine-learned model, carefully evaluate GPT-2 for your use case, especially if used without fine-tuning or in safety-critical applications where reliability is important.
-- The dataset our GPT-2 models were trained on contains many texts with [biases](https://twitter.com/TomerUllman/status/1101485289720242177) and factual inaccuracies, and thus GPT-2 models are likely to be biased and inaccurate as well.
-- To avoid having samples mistaken as human-written, we recommend clearly labeling samples as synthetic before wide dissemination.  Our models are often incoherent or inaccurate in subtle ways, which takes more than a quick read for a human to notice.
+```
+python download.py --model s --ckpt 1000000
+```
 
-### Work with us
+This command downloads the iGPT-S checkpoint at 1M training iterations. The default download directory is set to `/root/downloads/`, and can be changed using the `--download_dir` argument.
 
-Please [let us know](mailto:languagequestions@openai.com) if you’re doing interesting research with or working on applications of GPT-2!  We’re especially interested in hearing from and potentially working with those who are studying
-- Potential malicious use cases and defenses against them (e.g. the detectability of synthetic text)
-- The extent of problematic content (e.g. bias) being baked into the models and effective mitigations
+### Downloading Datasets
 
-## Development
+To download datasets, run `download.py` with the `--dataset` argument set to "imagenet" or "cifar10".
 
-See [DEVELOPERS.md](./DEVELOPERS.md)
+```
+python download.py --model s --ckpt 1000000 --dataset imagenet
+```
 
-## Contributors
+This command additionally downloads 32x32 ImageNet encoded with the 9-bit color palette described in the paper. The datasets we provide are center-cropped images intended for evaluation; random cropped images are required to faithfully replicate training.
 
-See [CONTRIBUTORS.md](./CONTRIBUTORS.md)
+### Downloading Color Clusters
 
-## Citation
+To download the color cluster file defining our 9-bit color palette, run `download.py` with the `--clusters` flag set.
+
+```
+python download.py --model s --ckpt 1000000 --dataset imagenet --clusters
+```
+
+This command additionally downloads the color cluster file. `src/run.py:sample` shows how to decode from 9-bit color to RGB and `src/utils.py:color_quantize` shows how to go the other way around.
+
+### Sampling
+
+Once the desired checkpoint and color cluster file are downloaded, we can run the script in sampling mode. The following commands sample from iGPT-S, iGPT-M, and iGPT-L respectively:
+
+```
+python src/run.py --sample --n_embd 512  --n_head 8  --n_layer 24
+python src/run.py --sample --n_embd 1024 --n_head 8  --n_layer 36
+python src/run.py --sample --n_embd 1536 --n_head 16 --n_layer 48
+```
+
+If your data is not in `/root/downloads/`, set `--ckpt_path` and `--color_cluster_path` manually. To run on fewer than 8 GPUs, use a command of the following form:
+
+```
+CUDA_VISIBLE_DEVICES=0,1 python src/run.py --sample --n_embd 512  --n_head 8  --n_layer 24 --n_gpu 2
+```
+
+### Evaluating
+
+Once the desired checkpoint and evaluation dataset are downloaded, we can run the script in evaluation mode. The following commands evaluate iGPT-S, iGPT-M, and iGPT-L on ImageNet respectively:
+
+```
+python src/run.py --eval --n_embd 512  --n_head 8  --n_layer 24
+python src/run.py --eval --n_embd 1024 --n_head 8  --n_layer 36
+python src/run.py --eval --n_embd 1536 --n_head 16 --n_layer 48
+```
+
+If your data is not in `/root/downloads/`, set `--ckpt_path` and `--data_path` manually. You should see that the test generative losses are 2.0895, 2.0614, and 2.0466, matching Figure 3 in the paper.
+
+### Citation
 
 Please use the following bibtex entry:
 ```
-@article{radford2019language,
-  title={Language Models are Unsupervised Multitask Learners},
-  author={Radford, Alec and Wu, Jeff and Child, Rewon and Luan, David and Amodei, Dario and Sutskever, Ilya},
-  year={2019}
+@article{chen2020generative,
+  title={Generative Pretraining from Pixels},
+  author={Chen, Mark and Radford, Alec and Child, Rewon and Wu, Jeff and Jun, Heewoo and Dhariwal, Prafulla and Luan, David and Sutskever, Ilya},
+  year={2020}
 }
 ```
-
-## Future work
-
-We may release code for evaluating the models on various benchmarks.
-
-We are still considering release of the larger models.
 
 ## License
 

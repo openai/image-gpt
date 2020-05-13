@@ -25,16 +25,17 @@ def softmax(x, axis=-1):
 def gelu(x):
     return 0.5*x*(1+tf.tanh(np.sqrt(2/np.pi)*(x+0.044715*tf.pow(x, 3))))
 
+def gelu2(x):
+    return x * tf.sigmoid(1.702 * x)
+
 def norm(x, scope, *, axis=-1, epsilon=1e-5):
     """Normalize to mean = 0, std = 1, then do a diagonal affine transform."""
     with tf.variable_scope(scope):
-        n_state = x.shape[-1].value
+        n_state = x.shape[axis].value
         g = tf.get_variable('g', [n_state], initializer=tf.constant_initializer(1))
-        b = tf.get_variable('b', [n_state], initializer=tf.constant_initializer(0))
-        u = tf.reduce_mean(x, axis=axis, keepdims=True)
-        s = tf.reduce_mean(tf.square(x-u), axis=axis, keepdims=True)
-        x = (x - u) * tf.rsqrt(s + epsilon)
-        x = x*g + b
+        s = tf.reduce_mean(tf.square(x), axis=axis, keepdims=True)
+        x = x * tf.rsqrt(s + epsilon)
+        x = x*g
         return x
 
 def split_states(x, n):
@@ -50,9 +51,8 @@ def merge_states(x):
 def conv1d(x, scope, nf, *, w_init_stdev=0.02):
     with tf.variable_scope(scope):
         *start, nx = shape_list(x)
-        w = tf.get_variable('w', [1, nx, nf], initializer=tf.random_normal_initializer(stddev=w_init_stdev))
-        b = tf.get_variable('b', [nf], initializer=tf.constant_initializer(0))
-        c = tf.reshape(tf.matmul(tf.reshape(x, [-1, nx]), tf.reshape(w, [-1, nf]))+b, start+[nf])
+        w = tf.get_variable('w', [nx, nf], initializer=tf.random_normal_initializer(stddev=w_init_stdev))
+        c = tf.reshape(tf.matmul(tf.reshape(x, [-1, nx]), tf.reshape(w, [-1, nf])), start+[nf])
         return c
 
 def attention_mask(nd, ns, *, dtype):
@@ -93,29 +93,37 @@ def attn(x, scope, n_state, *, past, hparams):
         w = tf.matmul(q, k, transpose_b=True)
         w = w * tf.rsqrt(tf.cast(v.shape[-1].value, w.dtype))
 
-        w = mask_attn_weights(w)
+        if not hparams.bert:
+            w = mask_attn_weights(w)
         w = softmax(w)
         a = tf.matmul(w, v)
         return a
 
     with tf.variable_scope(scope):
-        c = conv1d(x, 'c_attn', n_state*3)
-        q, k, v = map(split_heads, tf.split(c, 3, axis=2))
+        *start, nx = shape_list(x)
+
+        wk = tf.get_variable("k_proj", [hparams.n_head, nx // hparams.n_head, n_state], initializer=tf.random_normal_initializer(stddev=1.0/np.sqrt(n_state)))
+        wq = tf.get_variable("q_proj", [hparams.n_head, nx // hparams.n_head, n_state], initializer=tf.random_normal_initializer(stddev=1.0/np.sqrt(n_state)))
+        wv = tf.get_variable("v_proj", [hparams.n_head, nx // hparams.n_head, n_state], initializer=tf.random_normal_initializer(stddev=1.0/np.sqrt(n_state)))
+        k = tf.einsum("bsf,hef->bhse", x, wk)
+        q = tf.einsum("bsf,hef->bhse", x, wq)
+        v = tf.einsum("bsf,hef->bhse", x, wv)
+
         present = tf.stack([k, v], axis=1)
         if past is not None:
             pk, pv = tf.unstack(past, axis=1)
             k = tf.concat([pk, k], axis=-2)
             v = tf.concat([pv, v], axis=-2)
         a = multihead_attn(q, k, v)
-        a = merge_heads(a)
-        a = conv1d(a, 'c_proj', n_state)
+        wc = tf.get_variable("c_proj", [hparams.n_head, nx // hparams.n_head, n_state], initializer=tf.random_normal_initializer(stddev=1.0/np.sqrt(n_state*hparams.n_layer)))
+        a = tf.einsum("bhse,hef->bsf", a, wc)
         return a, present
 
 
 def mlp(x, scope, n_state, *, hparams):
     with tf.variable_scope(scope):
         nx = x.shape[-1].value
-        h = gelu(conv1d(x, 'c_fc', n_state))
+        h = gelu2(conv1d(x, 'c_fc', n_state))
         h2 = conv1d(h, 'c_proj', nx)
         return h2
 
@@ -144,17 +152,34 @@ def positions_for(tokens, past_length):
     return expand_tile(past_length + tf.range(nsteps), batch_size)
 
 
-def model(hparams, X, past=None, scope='model', reuse=False):
+def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
         results = {}
         batch, sequence = shape_list(X)
+
+        if hparams.bert:
+            M = tf.greater(tf.random.uniform([batch, sequence]), hparams.bert_mask_prob)
+            M = tf.cast(M, tf.float32)
 
         wpe = tf.get_variable('wpe', [hparams.n_ctx, hparams.n_embd],
                              initializer=tf.random_normal_initializer(stddev=0.01))
         wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
                              initializer=tf.random_normal_initializer(stddev=0.02))
+        wtet = tf.get_variable('wtet', [hparams.n_vocab, hparams.n_embd],
+                             initializer=tf.random_normal_initializer(stddev=0.0))
         past_length = 0 if past is None else tf.shape(past)[-2]
-        h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
+
+        h = tf.gather(wte, X)
+
+        if hparams.bert:
+            h = h * tf.expand_dims(M, 2)
+        else:
+            sos = tf.get_variable('sos', [hparams.n_embd],
+                                 initializer=tf.random_normal_initializer(stddev=0.02))
+            sos_tok = tf.ones([batch, 1, hparams.n_embd], dtype=tf.float32) * sos
+            h = tf.concat([sos_tok, h[:,:-1,:]], axis=1)
+
+        h += tf.gather(wpe, positions_for(X, past_length))
 
         # Transformer
         presents = []
@@ -166,9 +191,35 @@ def model(hparams, X, past=None, scope='model', reuse=False):
         results['present'] = tf.stack(presents, axis=1)
         h = norm(h, 'ln_f')
 
-        # Language model loss.  Do tokens <n predict token n?
+        # Generative loss.  Do tokens <n predict token n?
         h_flat = tf.reshape(h, [batch*sequence, hparams.n_embd])
-        logits = tf.matmul(h_flat, wte, transpose_b=True)
-        logits = tf.reshape(logits, [batch, sequence, hparams.n_vocab])
-        results['logits'] = logits
+        gen_logits = tf.matmul(h_flat, wtet, transpose_b=True)
+        gen_logits = tf.reshape(gen_logits, [batch, sequence, hparams.n_vocab])
+        results['gen_logits'] = gen_logits
+
+        gen_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=gen_logits, labels=X)
+        if hparams.bert:
+            IM = 1.0 - M
+            gen_losses = tf.reduce_sum(gen_losses * IM, axis=1) / tf.reduce_sum(IM, axis=1)
+            results['gen_loss'] = tf.reduce_mean(gen_losses)
+        else:
+            results['gen_loss'] = tf.reduce_mean(gen_losses)
+
+        # Classification loss.
+        with tf.variable_scope('clf', reuse=reuse):
+            classes = shape_list(Y)[1]
+            if hparams.clf:
+                wclf = tf.get_variable('wclf', [classes, hparams.n_embd],
+                                      initializer=tf.random_normal_initializer(stddev=0.0))
+            else:
+                wclf = tf.zeros([classes, hparams.n_embd], dtype=tf.float32)
+
+        h = tf.reduce_mean(h, axis=1)  # average pool over sequence
+        clf_logits = tf.matmul(h, wclf, transpose_b=True)
+        clf_losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=clf_logits, labels=Y)
+        results['clf_loss'] = tf.reduce_mean(clf_losses)
+
+        correct = tf.equal(tf.argmax(clf_logits, -1), tf.argmax(Y, -1))
+        results['accuracy'] = tf.reduce_mean(tf.cast(correct, tf.float32)) * 100.0
+
         return results
