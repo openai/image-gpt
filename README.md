@@ -2,7 +2,7 @@
 
 # image-gpt
 
-Code and models from the paper ["Generative Pretraining from Pixels"] (TODO: link to pdf).
+Code and models from the paper ["Generative Pretraining from Pixels"](https://cdn.openai.com/papers/Generative_Pretraining_from_Pixels_V2.pdf).
 
 Supported Platforms:
 
