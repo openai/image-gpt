@@ -10,18 +10,11 @@ Supported Platforms:
 
 ## Install
 
-You can get miniconda from https://docs.conda.io/en/latest/miniconda.html, or install the dependencies shown below manually.
+You can get miniconda from https://docs.conda.io/en/latest/miniconda.html and use `environment.yml` to install dependencies
 
 ```
-conda create --name image-gpt python=3.7.3
+conda env create -f environment.yml
 conda activate image-gpt
-
-conda install numpy=1.16.3
-conda install tensorflow-gpu=1.13.1
-
-conda install imageio=2.8.0
-conda install requests=2.21.0
-conda install tqdm=4.46.0
 ```
 
 ## Usage
