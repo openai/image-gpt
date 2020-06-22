@@ -32,6 +32,7 @@ def norm(x, scope, *, axis=-1, epsilon=1e-5):
     """Normalize to mean = 0, std = 1, then do a diagonal affine transform."""
     with tf.variable_scope(scope):
         n_state = x.shape[axis].value
+        #x = x - tf.reduce_mean(x,axis=axis,keepdims=True)#normalize to zero mean
         g = tf.get_variable('g', [n_state], initializer=tf.constant_initializer(1))
         s = tf.reduce_mean(tf.square(x), axis=axis, keepdims=True)
         x = x * tf.rsqrt(s + epsilon)
