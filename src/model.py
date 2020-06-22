@@ -66,7 +66,9 @@ def attention_mask(nd, ns, *, dtype):
     return tf.cast(m, dtype)
 
 
-def attn(x, scope, n_state, *, past, hparams):
+def attn(x, scope, n_state, *, past, hparams,results=None):
+    if results:
+        results['debug']['ln_1'].append(x)
     assert x.shape.ndims == 3  # Should be [batch, sequence, features]
     assert n_state % hparams.n_head == 0
     if past is not None:
@@ -128,10 +130,10 @@ def mlp(x, scope, n_state, *, hparams):
         return h2
 
 
-def block(x, scope, *, past, hparams):
+def block(x, scope, *, past, hparams,results=None):
     with tf.variable_scope(scope):
         nx = x.shape[-1].value
-        a, present = attn(norm(x, 'ln_1'), 'attn', nx, past=past, hparams=hparams)
+        a, present = attn(norm(x, 'ln_1'), 'attn', nx, past=past, hparams=hparams,results=results)
         x = x + a
         m = mlp(norm(x, 'ln_2'), 'mlp', nx*4, hparams=hparams)
         x = x + m
@@ -196,14 +198,14 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
         h += tf.gather(wpe, positions_for(X, past_length))
         h_after_wpe = tf.identity(h)
       
-        results['debug']['h_after_wpe'] = h_after_wpe
-
+        results['debug']['h_after_wpe'] = h_after_wpe 
+        results['debug']['ln_1']=[]
         # Transformer
         presents = []
         pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
         assert len(pasts) == hparams.n_layer
         for layer, past in enumerate(pasts):
-            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams)
+            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams,results=results)
             presents.append(present)
         results['present'] = tf.stack(presents, axis=1)
         h = norm(h, 'ln_f')
