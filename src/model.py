@@ -169,8 +169,16 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
                              initializer=tf.random_normal_initializer(stddev=0.0))
         past_length = 0 if past is None else tf.shape(past)[-2]
 
+        results['debug']={}
+
+        results['debug']['wte'] = wte
+        results['debug']['wpe'] = wpe
+        results['debug']['wtet'] = wtet
+
         h = tf.gather(wte, X)
 
+        h_before_sos = tf.identity(h)
+        results['debug']['h_before_sos'] = h_before_sos
         if hparams.bert:
             h = h * tf.expand_dims(M, 2)
         else:
@@ -179,7 +187,16 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
             sos_tok = tf.ones([batch, 1, hparams.n_embd], dtype=tf.float32) * sos
             h = tf.concat([sos_tok, h[:,:-1,:]], axis=1)
 
+        h_after_sos = tf.identity(h)
+        results['debug']['h_after_sos'] = h_after_sos
+
+        results['debug']['positions'] = positions_for(X, past_length)
+        results['debug']['wpe_to_add'] = tf.gather(wpe, positions_for(X, past_length))
+
         h += tf.gather(wpe, positions_for(X, past_length))
+        h_after_wpe = tf.identity(h)
+      
+        results['debug']['h_after_wpe'] = h_after_wpe
 
         # Transformer
         presents = []
