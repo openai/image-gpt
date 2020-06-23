@@ -112,9 +112,10 @@ def attn(x, scope, n_state, *, past, hparams,debug=None):
         q = tf.einsum("bsf,hef->bhse", x, wq)
         v = tf.einsum("bsf,hef->bhse", x, wv)
 
-        debug["query"].append(q)
-        debug["key"].append(k)
-        debug["value"].append(v)
+        if debug:
+            debug["query"].append(q)
+            debug["key"].append(k)
+            debug["value"].append(v)
 
         present = tf.stack([k, v], axis=1)
         if past is not None:
@@ -213,7 +214,7 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
         pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
         assert len(pasts) == hparams.n_layer
         for layer, past in enumerate(pasts):
-            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams,debug=results['debug'])
+            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams,debug=None)
             presents.append(present)
         results['present'] = tf.stack(presents, axis=1)
         h = norm(h, 'ln_f')
@@ -222,7 +223,9 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
         h_flat = tf.reshape(h, [batch*sequence, hparams.n_embd])
         gen_logits = tf.matmul(h_flat, wtet, transpose_b=True)
         gen_logits = tf.reshape(gen_logits, [batch, sequence, hparams.n_vocab])
+
         results['gen_logits'] = gen_logits
+        results['debug']['gen_logits'] = gen_logits
 
         gen_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=gen_logits, labels=X)
         if hparams.bert:
