@@ -67,9 +67,9 @@ def attention_mask(nd, ns, *, dtype):
     return tf.cast(m, dtype)
 
 
-def attn(x, scope, n_state, *, past, hparams,results=None):
-    if results:
-        results['debug']['ln_1'].append(x)
+def attn(x, scope, n_state, *, past, hparams,debug=None):
+    if debug:
+        debug['ln_1'].append(x)
     assert x.shape.ndims == 3  # Should be [batch, sequence, features]
     assert n_state % hparams.n_head == 0
     if past is not None:
@@ -112,6 +112,10 @@ def attn(x, scope, n_state, *, past, hparams,results=None):
         q = tf.einsum("bsf,hef->bhse", x, wq)
         v = tf.einsum("bsf,hef->bhse", x, wv)
 
+        debug["query"].append(q)
+        debug["key"].append(k)
+        debug["value"].append(v)
+
         present = tf.stack([k, v], axis=1)
         if past is not None:
             pk, pv = tf.unstack(past, axis=1)
@@ -131,10 +135,10 @@ def mlp(x, scope, n_state, *, hparams):
         return h2
 
 
-def block(x, scope, *, past, hparams,results=None):
+def block(x, scope, *, past, hparams,debug=None):
     with tf.variable_scope(scope):
         nx = x.shape[-1].value
-        a, present = attn(norm(x, 'ln_1'), 'attn', nx, past=past, hparams=hparams,results=results)
+        a, present = attn(norm(x, 'ln_1'), 'attn', nx, past=past, hparams=hparams,debug=debug)
         x = x + a
         m = mlp(norm(x, 'ln_2'), 'mlp', nx*4, hparams=hparams)
         x = x + m
@@ -201,12 +205,15 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
       
         results['debug']['h_after_wpe'] = h_after_wpe 
         results['debug']['ln_1']=[]
+        results['debug']['query']=[]
+        results['debug']['key']=[]
+        results['debug']['value']=[]
         # Transformer
         presents = []
         pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
         assert len(pasts) == hparams.n_layer
         for layer, past in enumerate(pasts):
-            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams,results=results)
+            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams,debug=results['debug'])
             presents.append(present)
         results['present'] = tf.stack(presents, axis=1)
         h = norm(h, 'ln_f')
