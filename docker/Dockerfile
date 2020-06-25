@@ -1,7 +1,7 @@
-FROM python:3.6-stretch
-
+FROM nvidia/cuda:10.0-cudnn7-runtime-ubuntu18.04
 RUN apt-get update && \
-	apt-get install -y gcc make apt-transport-https ca-certificates build-essential
+    apt-get install -y python3-pip && \
+    pip3 install 
 
 # check pyhon environment
 RUN python3 --version
