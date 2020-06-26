@@ -88,23 +88,16 @@ If your data is not in `/root/downloads/`, set `--ckpt_path` and `--data_path` m
 
 ### Docker
 
-Also, there is 'Dockerfile' in 'image-gpt/Docker' directory. To make a docker-container of the model and use it, you should replace the 'Dockerfile' file to 'image-gpt' directory.
-Next, use the 'build' command to create an image:
+Also, there is 'Dockerfile' in 'image-gpt/Docker' directory. To make a docker-container of the model and use it, you should use the 'build' command to create an image (including dot in the end):
 
 ```
-docker build -t image-gpt .
-```
-
-Check the container existence:
-
-```
-docker images
+docker build -t image-gpt -f docker/Dockerfile .
 ```
 
 After, you can run it by typing:
 
 ```
-docker run image-gpt
+nvidia-docker run image-gpt
 ```
 
 ### Citation
