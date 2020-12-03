@@ -28,7 +28,7 @@ def main(args):
 
     # download the checkpoint
     if args.model and args.ckpt:
-        base_url = f"https://storage.googleapis.com/openai-image-gpt-public/checkpoints/igpt-{args.model}/{args.ckpt}"
+        base_url = f"https://openaipublic.blob.core.windows.net/image-gpt/checkpoints/igpt-{args.model}/{args.ckpt}"
 
         size_to_shards = {"s": 32, "m": 32, "l": 64}
         shards = size_to_shards[args.model]
@@ -40,12 +40,12 @@ def main(args):
 
     # download the color clusters file
     if args.clusters:
-        urls.append("https://storage.googleapis.com/openai-image-gpt-public/color-clusters/kmeans_centers.npy")
+        urls.append("https://openaipublic.blob.core.windows.net/image-gpt/color-clusters/kmeans_centers.npy")
 
     # download color clustered dataset
     if args.dataset:
         for split in ["trX", "trY", "vaX", "vaY", "teX", "teY"]:
-            urls.append(f"https://storage.googleapis.com/openai-image-gpt-public/datasets/{args.dataset}_{split}.npy")
+            urls.append(f"https://openaipublic.blob.core.windows.net/image-gpt/datasets/{args.dataset}_{split}.npy")
 
     # run the download
     for url in urls:
