@@ -10,6 +10,7 @@ def parse_arguments():
 
     parser.add_argument("--download_dir", type=str, default="/root/downloads/")
 
+    parser.add_argument("--bert", action="store_true", help="download a bert model (default: ar)")
     parser.add_argument("--model", type=str, choices=["s", "m", "l"], help="parameter counts are s:76M, m:455M, l:1362M")
     parser.add_argument("--ckpt", type=str, choices=["131000", "262000", "524000", "1000000"])
     parser.add_argument("--clusters", action="store_true", help="download the color clusters file")
@@ -28,7 +29,7 @@ def main(args):
 
     # download the checkpoint
     if args.model and args.ckpt:
-        base_url = f"https://openaipublic.blob.core.windows.net/image-gpt/checkpoints/igpt-{args.model}/{args.ckpt}"
+        base_url = f"https://openaipublic.blob.core.windows.net/image-gpt/checkpoints/igpt-{args.model}{'-bert' if args.bert else ''}/{args.ckpt}"
 
         size_to_shards = {"s": 32, "m": 32, "l": 64}
         shards = size_to_shards[args.model]
