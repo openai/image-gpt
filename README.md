@@ -86,6 +86,20 @@ python src/run.py --eval --n_embd 1536 --n_head 16 --n_layer 48
 
 If your data is not in `/root/downloads/`, set `--ckpt_path` and `--data_path` manually. You should see that the test generative losses are 2.0895, 2.0614, and 2.0466, matching Figure 3 in the paper.
 
+### Docker
+
+Also, there is 'Dockerfile' in 'image-gpt/Docker' directory. To make a docker-container of the model and use it, you should use the 'build' command to create an image (including dot in the end):
+
+```
+docker build -t image-gpt -f docker/Dockerfile .
+```
+
+After, you can run it by typing:
+
+```
+nvidia-docker run image-gpt
+```
+
 ### Citation
 
 Please use the following bibtex entry:
