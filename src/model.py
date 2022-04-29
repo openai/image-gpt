@@ -32,6 +32,7 @@ def norm(x, scope, *, axis=-1, epsilon=1e-5):
     """Normalize to mean = 0, std = 1, then do a diagonal affine transform."""
     with tf.variable_scope(scope):
         n_state = x.shape[axis].value
+        #x = x - tf.reduce_mean(x,axis=axis,keepdims=True)#normalize to zero mean
         g = tf.get_variable('g', [n_state], initializer=tf.constant_initializer(1))
         s = tf.reduce_mean(tf.square(x), axis=axis, keepdims=True)
         x = x * tf.rsqrt(s + epsilon)
@@ -66,7 +67,9 @@ def attention_mask(nd, ns, *, dtype):
     return tf.cast(m, dtype)
 
 
-def attn(x, scope, n_state, *, past, hparams):
+def attn(x, scope, n_state, *, past, hparams,debug=None):
+    if debug:
+        debug['ln_1'].append(x)
     assert x.shape.ndims == 3  # Should be [batch, sequence, features]
     assert n_state % hparams.n_head == 0
     if past is not None:
@@ -109,6 +112,11 @@ def attn(x, scope, n_state, *, past, hparams):
         q = tf.einsum("bsf,hef->bhse", x, wq)
         v = tf.einsum("bsf,hef->bhse", x, wv)
 
+        if debug:
+            debug["query"].append(q)
+            debug["key"].append(k)
+            debug["value"].append(v)
+
         present = tf.stack([k, v], axis=1)
         if past is not None:
             pk, pv = tf.unstack(past, axis=1)
@@ -128,10 +136,10 @@ def mlp(x, scope, n_state, *, hparams):
         return h2
 
 
-def block(x, scope, *, past, hparams):
+def block(x, scope, *, past, hparams,debug=None):
     with tf.variable_scope(scope):
         nx = x.shape[-1].value
-        a, present = attn(norm(x, 'ln_1'), 'attn', nx, past=past, hparams=hparams)
+        a, present = attn(norm(x, 'ln_1'), 'attn', nx, past=past, hparams=hparams,debug=debug)
         x = x + a
         m = mlp(norm(x, 'ln_2'), 'mlp', nx*4, hparams=hparams)
         x = x + m
@@ -169,8 +177,16 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
                              initializer=tf.random_normal_initializer(stddev=0.0))
         past_length = 0 if past is None else tf.shape(past)[-2]
 
+        results['debug']={}
+
+        results['debug']['wte'] = wte
+        results['debug']['wpe'] = wpe
+        results['debug']['wtet'] = wtet
+
         h = tf.gather(wte, X)
 
+        h_before_sos = tf.identity(h)
+        results['debug']['h_before_sos'] = h_before_sos
         if hparams.bert:
             h = h * tf.expand_dims(M, 2)
         else:
@@ -179,14 +195,26 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
             sos_tok = tf.ones([batch, 1, hparams.n_embd], dtype=tf.float32) * sos
             h = tf.concat([sos_tok, h[:,:-1,:]], axis=1)
 
-        h += tf.gather(wpe, positions_for(X, past_length))
+        h_after_sos = tf.identity(h)
+        results['debug']['h_after_sos'] = h_after_sos
 
+        results['debug']['positions'] = positions_for(X, past_length)
+        results['debug']['wpe_to_add'] = tf.gather(wpe, positions_for(X, past_length))
+
+        h += tf.gather(wpe, positions_for(X, past_length))
+        h_after_wpe = tf.identity(h)
+      
+        results['debug']['h_after_wpe'] = h_after_wpe 
+        results['debug']['ln_1']=[]
+        results['debug']['query']=[]
+        results['debug']['key']=[]
+        results['debug']['value']=[]
         # Transformer
         presents = []
         pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
         assert len(pasts) == hparams.n_layer
         for layer, past in enumerate(pasts):
-            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams)
+            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams,debug=None)
             presents.append(present)
         results['present'] = tf.stack(presents, axis=1)
         h = norm(h, 'ln_f')
@@ -195,7 +223,9 @@ def model(hparams, X, Y=None, past=None, scope='model', reuse=False):
         h_flat = tf.reshape(h, [batch*sequence, hparams.n_embd])
         gen_logits = tf.matmul(h_flat, wtet, transpose_b=True)
         gen_logits = tf.reshape(gen_logits, [batch, sequence, hparams.n_vocab])
+
         results['gen_logits'] = gen_logits
+        results['debug']['gen_logits'] = gen_logits
 
         gen_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=gen_logits, labels=X)
         if hparams.bert:
